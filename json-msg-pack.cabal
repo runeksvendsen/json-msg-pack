@@ -20,6 +20,7 @@ executable json-msg-pack-bench
                      , bytestring
                      , criterion
                      , data-msgpack
+                     , cereal
                      , deepseq
                      , text
                      , weigh

@@ -28,7 +28,9 @@ import qualified Data.Aeson as Aeson
 import           Data.ByteString.Lazy (ByteString)
 import qualified Data.ByteString.Lazy as BS
 import qualified Data.MessagePack as MsgPck
+import qualified Data.Serialize as Ser
 import           Data.Text (Text)
+import qualified Data.Text.Encoding as Enc
 import           GHC.Generics (Generic)
 import qualified Weigh as Weigh
 import           Control.Exception (assert)
@@ -100,7 +102,16 @@ instance MsgPck.MessagePack A
 instance MsgPck.MessagePack B
 ~~~
 
-Wait, that was it? 6 lines of code? That was easy! We can now REST knowing that supporting multiple mediums is not burdensome on developers.
+and for `Data.Serialize`:
+~~~ {.haskell}
+instance Ser.Serialize A
+instance Ser.Serialize B
+instance Ser.Serialize Text where
+   put = Ser.put . Enc.encodeUtf8
+   get = Enc.decodeUtf8 <$> Ser.get
+~~~
+
+Wait, that was it? 11 lines of code? That was easy! We can now REST knowing that supporting multiple mediums is not burdensome on developers.
 
 ## Benchmarking
 
@@ -116,6 +127,9 @@ pickleJson = Aeson.decode . Aeson.encode
 
 pickleMsgPck :: A -> Maybe A
 pickleMsgPck = MsgPck.unpack . MsgPck.pack
+
+pickleCereal :: A -> Maybe A
+pickleCereal = either (const Nothing) Just . Ser.decode . Ser.encode
 ~~~
 
 Now we can create a simple test function. This function asserts that our pickled data is the same as the original data. Since we automatically derived the `Eq` typeclass, we can do this by simply asserting equality.
@@ -124,6 +138,7 @@ Now we can create a simple test function. This function asserts that our pickled
 test = do
   assert (Just testData == pickleJson testData) $ pure ()
   assert (Just testData == pickleMsgPck testData) $ pure ()
+  assert (Just testData == pickleCereal testData) $ pure ()
 ~~~
 
 The Haskell ecosystem has robust testing facilities via [`HSpec`](https://hackage.haskell.org/package/hspec), [`QuickCheck`](https://hackage.haskell.org/package/QuickCheck), and many more, but we went with simplicity.
@@ -139,6 +154,7 @@ benchmark = do
     [ Criterion.bgroup "pickle"
       [ Criterion.bench "json" $ Criterion.nf pickleJson testData
       , Criterion.bench "msgpack" $ Criterion.nf pickleMsgPck testData
+      , Criterion.bench "cereal" $ Criterion.nf pickleCereal testData
       ]
     ]
 ~~~
@@ -180,6 +196,7 @@ weighFunction label func dat = do
 weigh = do 
   weighFunction "aeson" pickleJson testData
   weighFunction "msgpack" pickleMsgPck testData
+  weighFunction "cereal" pickleCereal testData
 ~~~
 
 Weigh doesn't have standard reporting for `weighFunc`, so we've written a bit of `IO` with `putStrLn` to display our results.
@@ -198,6 +215,7 @@ payloadSize label func dat = do
 payload = do
   payloadSize "aeson" Aeson.encode testData
   payloadSize "msgpack" MsgPck.pack testData
+  payloadSize "cereal" Ser.encodeLazy testData
 ~~~
 
 ## Results
